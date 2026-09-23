@@ -4,7 +4,7 @@ import pg from 'pg';
 const { Pool } = pg;
 const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } }) : null;
 const port = Number(process.env.API_PORT || 8787);
-const REFERRAL_REWARD = 5;
+const REFERRAL_REWARD = 50;
 const RATE_PER_HOUR = 0.05;
 
 async function ensureSchema() {
@@ -17,11 +17,15 @@ async function ensureSchema() {
     last_claim_time BIGINT NOT NULL,
     referral_code TEXT,
     referred_by BIGINT,
+    referral_count INT NOT NULL DEFAULT 0,
+    referral_earned NUMERIC NOT NULL DEFAULT 0,
     referral_reward NUMERIC NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`);
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS unclaimed_balance NUMERIC NOT NULL DEFAULT 0');
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by BIGINT');
+  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_count INT NOT NULL DEFAULT 0');
+  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_earned NUMERIC NOT NULL DEFAULT 0');
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_reward NUMERIC NOT NULL DEFAULT 0');
   await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()');
 }
@@ -43,13 +47,13 @@ async function findOrCreateUser(client, telegramId, startParam) {
   const inviterId = startParam && /^\d+$/.test(String(startParam)) && String(startParam) !== String(telegramId) ? String(startParam) : null;
   const inviter = inviterId ? await client.query('SELECT telegram_id FROM users WHERE telegram_id = $1 FOR UPDATE', [inviterId]) : { rowCount: 0 };
   const created = await client.query(`INSERT INTO users (telegram_id, balance, last_claim_time, referral_code, referred_by)
-    VALUES ($1, $2, $3, $4, $5) RETURNING *`, [telegramId, inviter.rowCount ? REFERRAL_REWARD : 0, Date.now(), String(telegramId), inviter.rowCount ? inviterId : null]);
-  if (inviter.rowCount) await client.query('UPDATE users SET referral_reward = referral_reward + $1 WHERE telegram_id = $2', [REFERRAL_REWARD, inviterId]);
+    VALUES ($1, 0, $2, $3, $4) RETURNING *`, [telegramId, Date.now(), String(telegramId), inviter.rowCount ? inviterId : null]);
+  if (inviter.rowCount) await client.query('UPDATE users SET balance = balance + $1, referral_count = referral_count + 1, referral_earned = referral_earned + $1 WHERE telegram_id = $2', [REFERRAL_REWARD, inviterId]);
   return created.rows[0];
 }
 
 function serialize(user) {
-  return { ...user, telegram_id: String(user.telegram_id), balance: Number(user.balance), unclaimed_balance: Number(user.unclaimed_balance), referral_reward: Number(user.referral_reward) };
+  return { ...user, telegram_id: String(user.telegram_id), balance: Number(user.balance), unclaimed_balance: Number(user.unclaimed_balance), referral_count: Number(user.referral_count), referral_earned: Number(user.referral_earned), referral_reward: Number(user.referral_reward) };
 }
 
 const server = createServer(async (request, response) => {
@@ -62,12 +66,12 @@ const server = createServer(async (request, response) => {
   try {
     if (referralId && request.method === 'GET') {
       const result = await pool.query('SELECT telegram_id, created_at FROM users WHERE referred_by = $1 ORDER BY created_at DESC NULLS LAST', [referralId]);
-      const owner = await pool.query('SELECT referral_reward FROM users WHERE telegram_id = $1', [referralId]);
-      return send(response, 200, { referrals: result.rows.map((row) => ({ telegram_id: String(row.telegram_id), created_at: row.created_at })), referral_reward: Number(owner.rows[0]?.referral_reward || 0) });
+      const owner = await pool.query('SELECT referral_count, referral_earned FROM users WHERE telegram_id = $1', [referralId]);
+      return send(response, 200, { referrals: result.rows.map((row) => ({ telegram_id: String(row.telegram_id), created_at: row.created_at })), referral_count: Number(owner.rows[0]?.referral_count || 0), referral_earned: Number(owner.rows[0]?.referral_earned || 0) });
     }
     if (url.pathname === '/api/user' && request.method === 'GET' && userId) {
       const result = await pool.query('SELECT * FROM users WHERE telegram_id = $1', [userId]);
-      return send(response, 200, result.rowCount ? serialize(result.rows[0]) : { telegram_id: userId, balance: 0, unclaimed_balance: 0, mining_level: 1, last_claim_time: Date.now(), referral_reward: 0 });
+      return send(response, 200, result.rowCount ? serialize(result.rows[0]) : { telegram_id: userId, balance: 0, unclaimed_balance: 0, mining_level: 1, last_claim_time: Date.now(), referral_count: 0, referral_earned: 0 });
     }
     if (url.pathname === '/api/user' && request.method === 'POST') {
       const body = await readBody(request);
