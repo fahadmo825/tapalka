@@ -6,8 +6,8 @@ type TelegramUser = { id?: number };
 type TelegramWindow = Window & { Telegram?: { WebApp?: { initDataUnsafe?: { user?: TelegramUser; start_param?: string } } } };
 type Referral = { telegram_id: string; created_at?: string };
 
-const FALLBACK_ID = 5143230997;
 const STORAGE_KEY = 'agenb-mining-state';
+const LOCAL_USER_ID_KEY = 'agenb-local-user-id';
 const BOT_NAME = 'AURA_AGENBOT';
 const levels = Array.from({ length: 12 }, (_, index) => ({ level: index + 1, rate: 0.05 * (index + 1), price: index === 0 ? 0 : 0.25 * index }));
 const tasks = [
@@ -16,10 +16,23 @@ const tasks = [
   { icon: '↗', title: 'Visit AGEN website', reward: 0.05, action: 'Visit' },
 ];
 
+function getLocalTestingUserId() {
+  const params = new URLSearchParams(window.location.search);
+  const queryUserId = params.get('telegram_id') || params.get('user_id') || params.get('id');
+  if (queryUserId && /^\d+$/.test(queryUserId)) return queryUserId;
+
+  const storedUserId = localStorage.getItem(LOCAL_USER_ID_KEY);
+  if (storedUserId) return storedUserId;
+
+  const generatedUserId = String(Date.now() * 1000 + Math.floor(Math.random() * 1000));
+  localStorage.setItem(LOCAL_USER_ID_KEY, generatedUserId);
+  return generatedUserId;
+}
+
 function App() {
   const telegramUser = (window as TelegramWindow).Telegram?.WebApp?.initDataUnsafe?.user;
   const startParam = (window as TelegramWindow).Telegram?.WebApp?.initDataUnsafe?.start_param || new URLSearchParams(window.location.search).get('start') || undefined;
-  const userId = telegramUser?.id ?? FALLBACK_ID;
+  const userId = telegramUser?.id ? String(telegramUser.id) : getLocalTestingUserId();
   const [activeTab, setActiveTab] = useState<Tab>('mine');
   const [balance, setBalance] = useState(() => Number(localStorage.getItem(`${STORAGE_KEY}:balance`) ?? 0));
   const [unclaimedBalance, setUnclaimedBalance] = useState(0);
@@ -39,16 +52,24 @@ function App() {
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
   useEffect(() => { localStorage.setItem(`${STORAGE_KEY}:balance`, String(balance)); localStorage.setItem(`${STORAGE_KEY}:lastClaim`, String(lastClaimTime)); localStorage.setItem(`${STORAGE_KEY}:level`, String(level)); }, [balance, lastClaimTime, level]);
   useEffect(() => {
-    fetch('/api/user', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ telegram_id: userId, start_param: startParam }) }).then((response) => response.ok ? response.json() : null).then((user) => {
-      if (!user) return;
+    const syncUser = async () => {
+      const response = await fetch('/api/user', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ telegram_id: userId, start_param: startParam }) });
+      if (!response.ok) return;
+      const user = await response.json();
       setBalance(Number(user.balance));
       setUnclaimedBalance(Number(user.unclaimed_balance));
       setLastClaimTime(Number(user.last_claim_time));
       setLevel(Number(user.mining_level));
       setReferralCount(Number(user.referral_count || 0));
       setReferralEarned(Number(user.referral_earned || 0));
-    }).catch(() => undefined);
-    fetch(`/api/referrals/${userId}`).then((response) => response.ok ? response.json() : null).then((data) => { if (!data) return; setReferrals(data.referrals || []); setReferralCount(Number(data.referral_count || 0)); setReferralEarned(Number(data.referral_earned || 0)); }).catch(() => undefined);
+      const referralResponse = await fetch(`/api/referrals/${userId}`);
+      if (!referralResponse.ok) return;
+      const data = await referralResponse.json();
+      setReferrals(data.referrals || []);
+      setReferralCount(Number(data.referral_count || 0));
+      setReferralEarned(Number(data.referral_earned || 0));
+    };
+    syncUser().catch(() => undefined);
   }, [userId, startParam]);
 
   const claim = () => {

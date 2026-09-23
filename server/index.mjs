@@ -47,7 +47,8 @@ async function findOrCreateUser(client, telegramId, startParam) {
   const inviterId = startParam && /^\d+$/.test(String(startParam)) && String(startParam) !== String(telegramId) ? String(startParam) : null;
   const inviter = inviterId ? await client.query('SELECT telegram_id FROM users WHERE telegram_id = $1 FOR UPDATE', [inviterId]) : { rowCount: 0 };
   const created = await client.query(`INSERT INTO users (telegram_id, balance, last_claim_time, referral_code, referred_by)
-    VALUES ($1, 0, $2, $3, $4) RETURNING *`, [telegramId, Date.now(), String(telegramId), inviter.rowCount ? inviterId : null]);
+    VALUES ($1, 0, $2, $3, $4) ON CONFLICT (telegram_id) DO NOTHING RETURNING *`, [telegramId, Date.now(), String(telegramId), inviter.rowCount ? inviterId : null]);
+  if (!created.rowCount) return (await client.query('SELECT * FROM users WHERE telegram_id = $1 FOR UPDATE', [telegramId])).rows[0];
   if (inviter.rowCount) await client.query('UPDATE users SET balance = balance + $1, referral_count = referral_count + 1, referral_earned = referral_earned + $1 WHERE telegram_id = $2', [REFERRAL_REWARD, inviterId]);
   return created.rows[0];
 }
@@ -80,7 +81,7 @@ const server = createServer(async (request, response) => {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
-        let user = await findOrCreateUser(client, telegramId, body.start_param);
+        let user = await findOrCreateUser(client, telegramId, body.start_param || body.start);
         if (body.action === 'claim') {
           const elapsedSeconds = Math.max(0, (Date.now() - Number(user.last_claim_time)) / 1000);
           const earned = Number(user.unclaimed_balance) + (RATE_PER_HOUR * Number(user.mining_level) / 3600) * elapsedSeconds;
