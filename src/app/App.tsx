@@ -8,7 +8,7 @@ type Referral = { telegram_id: string; created_at?: string };
 
 const FALLBACK_ID = 5143230997;
 const STORAGE_KEY = 'agenb-mining-state';
-const BOT_NAME = 'AURA_AGEN_bot';
+const BOT_NAME = 'AURA_AGENBOT';
 const levels = Array.from({ length: 12 }, (_, index) => ({ level: index + 1, rate: 0.05 * (index + 1), price: index === 0 ? 0 : 0.25 * index }));
 const tasks = [
   { icon: '𝕏', title: 'Follow us on X', reward: 50, action: 'Follow' },
