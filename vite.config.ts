@@ -11,6 +11,9 @@ export default defineConfig({
   },
   server: {
     port: 8000,
+    proxy: {
+      '/api': 'http://localhost:8787',
+    },
   },
   css: {
     preprocessorOptions: {

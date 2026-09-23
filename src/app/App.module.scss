@@ -50,6 +50,12 @@ em { color: #acb8a1; font-size: .42em; font-style: normal; letter-spacing: .08em
 .statsRow { display: flex; gap: 10px; margin-top: 10px; }
 .statsRow div { background: #192321cc; border: 1px solid #2a3a34; border-radius: 15px; display: flex; flex: 1; flex-direction: column; gap: 5px; padding: 17px; }
 .statsRow strong { color: var(--green); font-size: 23px; }
+.referralList { background: #192321cc; border: 1px solid #2a3a34; border-radius: 15px; margin: 10px 0; padding: 5px 15px; }
+.referralList div { border-bottom: 1px solid #2a3a34; display: flex; justify-content: space-between; padding: 13px 0; }
+.referralList div:last-child { border-bottom: 0; }
+.referralList span { color: #81918a; font-size: 12px; }
+.referralList strong { color: #dbe6d3; font-size: 12px; }
+.referralList > p { padding: 10px 0; }
 .profileId { justify-content: space-between; margin-top: 28px; }
 .profileId span { color: #82918b; font-size: 12px; }
 .profileId strong { color: var(--green); font-size: 14px; }

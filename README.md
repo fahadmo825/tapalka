@@ -6,7 +6,7 @@
 - npm install 
 - npm run dev
 
-## AGENB API
+## AGEN API
 
 The optional API uses Neon PostgreSQL through `DATABASE_URL` and creates the `users` table on startup.
 
@@ -14,7 +14,7 @@ The optional API uses Neon PostgreSQL through `DATABASE_URL` and creates the `us
 DATABASE_URL="postgresql://..." npm run api
 ```
 
-It exposes `GET /api/mining/:telegramId` and `POST /api/mining/:telegramId/claim`. Without the API, the Mini App keeps a local persistent fallback so it remains usable during local preview.
+Set `VITE_BOT_USERNAME` for the invite link. The API exposes `GET /api/user?telegram_id=...`, `POST /api/user`, `GET /api/referrals/:telegramId`, and `POST /api/user/:telegramId/referral-claim`. Without the API, the Mini App keeps a local persistent fallback so it remains usable during local preview.
 
 Фронтенд захостил на vercel: [tapalka](https://tapalka.vercel.app/)
 Фронтенд не будет работать вне телеграмма.
