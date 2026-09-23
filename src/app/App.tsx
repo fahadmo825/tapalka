@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import styles from './App.module.scss';
-import NotMobile from '../components/not-mobile/not-mobile';
 
 type Tab = 'mine' | 'tasks' | 'miners' | 'friends' | 'profile';
 type TelegramUser = { id?: number; username?: string };
@@ -72,8 +71,6 @@ function App() {
   const buyLevel = (nextLevel: number, price: number) => { if (nextLevel === level + 1 && totalBalance >= price) { setBalance(totalBalance - price); setUnclaimedBalance(0); setLastClaimTime(Date.now()); setLevel(nextLevel); } };
   const referralLink = `https://t.me/${BOT_NAME}?start=${userId}`;
   const pageTitle = useMemo(() => ({ mine: 'Mining', tasks: 'Earn more', miners: 'Miners', friends: 'Friends', profile: 'Profile' }[activeTab]), [activeTab]);
-
-  if (!userId) return <NotMobile />;
 
   const renderContent = () => {
     if (activeTab === 'tasks') return <section className={styles.page}><p className={styles.eyebrow}>REWARDS</p><h1>{pageTitle}</h1><p className={styles.muted}>Complete simple actions and grow your balance.</p><div className={styles.taskList}>{tasks.map((task) => { const done = completedTasks.includes(task.title); return <article className={styles.task} key={task.title}><span className={styles.taskIcon}>{task.icon}</span><div><strong>{task.title}</strong><small>+{task.reward} AGEN</small></div><button className={styles.smallButton} disabled={done} onClick={() => setCompletedTasks([...completedTasks, task.title])}>{done ? 'Done' : task.action}</button></article>; })}</div></section>;
