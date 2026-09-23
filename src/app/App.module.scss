@@ -21,8 +21,7 @@ h1 span { color: #8c9d91; }
 .live i { background: var(--green); border-radius: 50%; display: inline-block; height: 6px; margin-right: 5px; width: 6px; box-shadow: 0 0 10px var(--green); }
 .coinStage { align-items: center; display: flex; height: 285px; justify-content: center; position: relative; }
 .coinGlow { background: #b8dc68; border-radius: 50%; filter: blur(52px); height: 130px; opacity: .24; position: absolute; width: 190px; }
-.coin { align-items: center; background: linear-gradient(135deg, #fff2a7 0%, #e1a22b 48%, #8a5915 100%); border: 8px solid #d89b27; border-radius: 50%; box-shadow: inset 7px 8px 3px #fff4ad, inset -10px -12px 8px #815010, 0 25px 35px #080d0b, 0 0 55px #bed85c55; color: #865c15; display: flex; font-size: 90px; font-weight: 800; height: 182px; justify-content: center; position: relative; text-shadow: 2px 3px #ffe58a; transform: rotate(-8deg); width: 182px; }
-.coin::after { border: 2px solid #ffe89a; border-radius: 50%; content: ''; height: 148px; position: absolute; width: 148px; }
+.coinImage { aspect-ratio: 1; display: block; filter: drop-shadow(0 20px 25px #080d0b) drop-shadow(0 0 25px #f4bd4575); max-width: 78%; object-fit: contain; position: relative; transform: rotate(-8deg); width: min(182px, 48vw); }
 .earnings { align-items: center; display: flex; flex-direction: column; }
 .earnings small, .walletCard small, .task small, .levelCard small, .statsRow small { color: #81918a; font-size: 10px; letter-spacing: .09em; }
 .earnings strong { color: var(--green); font-size: 31px; margin: 5px 0; text-shadow: 0 0 18px #9ee65c66; }
