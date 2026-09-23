@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import styles from './App.module.scss';
 
 type Tab = 'mine' | 'tasks' | 'miners' | 'friends' | 'profile';
-type TelegramUser = { id?: number };
+type TelegramUser = { id?: number; username?: string };
 type TelegramWindow = Window & { Telegram?: { WebApp?: { initDataUnsafe?: { user?: TelegramUser; start_param?: string } } } };
 type Referral = { telegram_id: string; created_at?: string };
 
@@ -53,7 +53,7 @@ function App() {
   useEffect(() => { localStorage.setItem(`${STORAGE_KEY}:balance`, String(balance)); localStorage.setItem(`${STORAGE_KEY}:lastClaim`, String(lastClaimTime)); localStorage.setItem(`${STORAGE_KEY}:level`, String(level)); }, [balance, lastClaimTime, level]);
   useEffect(() => {
     const syncUser = async () => {
-      const response = await fetch('/api/user', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ telegram_id: userId, start_param: startParam }) });
+      const response = await fetch('/api/user', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ telegram_id: userId, username: telegramUser?.username, start_param: startParam }) });
       if (!response.ok) return;
       const user = await response.json();
       setBalance(Number(user.balance));
@@ -77,7 +77,7 @@ function App() {
     setUnclaimedBalance(0);
     setLastClaimTime(Date.now());
     setNow(Date.now());
-    fetch('/api/user', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'claim', telegram_id: userId, start_param: startParam }) }).then((response) => response.ok ? response.json() : null).then((user) => { if (!user) return; setBalance(Number(user.balance)); setUnclaimedBalance(Number(user.unclaimed_balance)); setLastClaimTime(Number(user.last_claim_time)); }).catch(() => undefined);
+    fetch('/api/user', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ action: 'claim', telegram_id: userId, username: telegramUser?.username, start_param: startParam }) }).then((response) => response.ok ? response.json() : null).then((user) => { if (!user) return; setBalance(Number(user.balance)); setUnclaimedBalance(Number(user.unclaimed_balance)); setLastClaimTime(Number(user.last_claim_time)); }).catch(() => undefined);
   };
   const buyLevel = (nextLevel: number, price: number) => { if (nextLevel === level + 1 && totalBalance >= price) { setBalance(totalBalance - price); setUnclaimedBalance(0); setLastClaimTime(Date.now()); setLevel(nextLevel); } };
   const referralLink = `https://t.me/${BOT_NAME}?start=${userId}`;

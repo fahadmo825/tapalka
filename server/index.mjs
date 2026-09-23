@@ -1,34 +1,8 @@
 import { createServer } from 'node:http';
-import pg from 'pg';
-
-const { Pool } = pg;
-const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } }) : null;
+import { ensureSchema, pool } from './db.mjs';
 const port = Number(process.env.API_PORT || 8787);
 const REFERRAL_REWARD = 50;
 const RATE_PER_HOUR = 0.05;
-
-async function ensureSchema() {
-  if (!pool) return;
-  await pool.query(`CREATE TABLE IF NOT EXISTS users (
-    telegram_id BIGINT PRIMARY KEY,
-    balance NUMERIC NOT NULL DEFAULT 0,
-    unclaimed_balance NUMERIC NOT NULL DEFAULT 0,
-    mining_level INT NOT NULL DEFAULT 1,
-    last_claim_time BIGINT NOT NULL,
-    referral_code TEXT,
-    referred_by BIGINT,
-    referral_count INT NOT NULL DEFAULT 0,
-    referral_earned NUMERIC NOT NULL DEFAULT 0,
-    referral_reward NUMERIC NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  )`);
-  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS unclaimed_balance NUMERIC NOT NULL DEFAULT 0');
-  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by BIGINT');
-  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_count INT NOT NULL DEFAULT 0');
-  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_earned NUMERIC NOT NULL DEFAULT 0');
-  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_reward NUMERIC NOT NULL DEFAULT 0');
-  await pool.query('ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()');
-}
 
 function send(response, status, body) {
   response.writeHead(status, { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET,POST,OPTIONS', 'access-control-allow-headers': 'content-type' });
@@ -41,20 +15,23 @@ async function readBody(request) {
   return body ? JSON.parse(body) : {};
 }
 
-async function findOrCreateUser(client, telegramId, startParam) {
+async function findOrCreateUser(client, telegramId, startParam, username) {
   const existing = await client.query('SELECT * FROM users WHERE telegram_id = $1 FOR UPDATE', [telegramId]);
-  if (existing.rowCount) return existing.rows[0];
+  if (existing.rowCount) {
+    if (username) await client.query('UPDATE users SET username = $1 WHERE telegram_id = $2', [username, telegramId]);
+    return existing.rows[0];
+  }
   const inviterId = startParam && /^\d+$/.test(String(startParam)) && String(startParam) !== String(telegramId) ? String(startParam) : null;
   const inviter = inviterId ? await client.query('SELECT telegram_id FROM users WHERE telegram_id = $1 FOR UPDATE', [inviterId]) : { rowCount: 0 };
-  const created = await client.query(`INSERT INTO users (telegram_id, balance, last_claim_time, referral_code, referred_by)
-    VALUES ($1, 0, $2, $3, $4) ON CONFLICT (telegram_id) DO NOTHING RETURNING *`, [telegramId, Date.now(), String(telegramId), inviter.rowCount ? inviterId : null]);
+  const created = await client.query(`INSERT INTO users (telegram_id, username, balance, mining_level, last_claim_time, referral_code, referred_by)
+    VALUES ($1, $2, 0.0, 1, CURRENT_TIMESTAMP, $3, $4) ON CONFLICT (telegram_id) DO NOTHING RETURNING *`, [telegramId, username || null, String(telegramId), inviter.rowCount ? inviterId : null]);
   if (!created.rowCount) return (await client.query('SELECT * FROM users WHERE telegram_id = $1 FOR UPDATE', [telegramId])).rows[0];
   if (inviter.rowCount) await client.query('UPDATE users SET balance = balance + $1, referral_count = referral_count + 1, referral_earned = referral_earned + $1 WHERE telegram_id = $2', [REFERRAL_REWARD, inviterId]);
   return created.rows[0];
 }
 
 function serialize(user) {
-  return { ...user, telegram_id: String(user.telegram_id), balance: Number(user.balance), unclaimed_balance: Number(user.unclaimed_balance), referral_count: Number(user.referral_count), referral_earned: Number(user.referral_earned), referral_reward: Number(user.referral_reward) };
+  return { ...user, telegram_id: String(user.telegram_id), balance: Number(user.balance), unclaimed_balance: Number(user.unclaimed_balance), referral_count: Number(user.referral_count), referral_earned: Number(user.referral_earned), referral_reward: Number(user.referral_reward), last_claim_time: new Date(user.last_claim_time).getTime() };
 }
 
 const server = createServer(async (request, response) => {
@@ -81,11 +58,11 @@ const server = createServer(async (request, response) => {
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
-        let user = await findOrCreateUser(client, telegramId, body.start_param || body.start);
+        let user = await findOrCreateUser(client, telegramId, body.start_param || body.start, body.username);
         if (body.action === 'claim') {
-          const elapsedSeconds = Math.max(0, (Date.now() - Number(user.last_claim_time)) / 1000);
+          const elapsedSeconds = Math.max(0, (Date.now() - new Date(user.last_claim_time).getTime()) / 1000);
           const earned = Number(user.unclaimed_balance) + (RATE_PER_HOUR * Number(user.mining_level) / 3600) * elapsedSeconds;
-          const updated = await client.query('UPDATE users SET balance = balance + $1, unclaimed_balance = 0, last_claim_time = $2 WHERE telegram_id = $3 RETURNING *', [earned, Date.now(), telegramId]);
+          const updated = await client.query('UPDATE users SET balance = balance + $1, unclaimed_balance = 0, last_claim_time = CURRENT_TIMESTAMP WHERE telegram_id = $2 RETURNING *', [earned, telegramId]);
           user = updated.rows[0];
         }
         await client.query('COMMIT');
