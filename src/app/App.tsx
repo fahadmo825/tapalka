@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import styles from './App.module.scss';
+import NotMobile from '../components/not-mobile/not-mobile';
 
 type Tab = 'mine' | 'tasks' | 'miners' | 'friends' | 'profile';
 type TelegramUser = { id?: number; username?: string };
@@ -7,7 +8,6 @@ type TelegramWindow = Window & { Telegram?: { WebApp?: { initDataUnsafe?: { user
 type Referral = { telegram_id: string; created_at?: string };
 
 const STORAGE_KEY = 'agenb-mining-state';
-const LOCAL_USER_ID_KEY = 'agenb-local-user-id';
 const BOT_NAME = 'AURA_AGENBOT';
 const levels = Array.from({ length: 12 }, (_, index) => ({ level: index + 1, rate: 0.05 * (index + 1), price: index === 0 ? 0 : 0.25 * index }));
 const tasks = [
@@ -16,28 +16,16 @@ const tasks = [
   { icon: '↗', title: 'Visit AGEN website', reward: 0.05, action: 'Visit' },
 ];
 
-function getLocalTestingUserId() {
-  const params = new URLSearchParams(window.location.search);
-  const queryUserId = params.get('telegram_id') || params.get('user_id') || params.get('id');
-  if (queryUserId && /^\d+$/.test(queryUserId)) return queryUserId;
-
-  const storedUserId = localStorage.getItem(LOCAL_USER_ID_KEY);
-  if (storedUserId) return storedUserId;
-
-  const generatedUserId = String(Date.now() * 1000 + Math.floor(Math.random() * 1000));
-  localStorage.setItem(LOCAL_USER_ID_KEY, generatedUserId);
-  return generatedUserId;
-}
-
 function App() {
   const telegramUser = (window as TelegramWindow).Telegram?.WebApp?.initDataUnsafe?.user;
   const startParam = (window as TelegramWindow).Telegram?.WebApp?.initDataUnsafe?.start_param || new URLSearchParams(window.location.search).get('start') || undefined;
-  const userId = telegramUser?.id ? String(telegramUser.id) : getLocalTestingUserId();
+  const userId = telegramUser?.id !== undefined ? String(telegramUser.id) : '';
+  const userStorageKey = userId ? `${STORAGE_KEY}:${userId}` : STORAGE_KEY;
   const [activeTab, setActiveTab] = useState<Tab>('mine');
-  const [balance, setBalance] = useState(() => Number(localStorage.getItem(`${STORAGE_KEY}:balance`) ?? 0));
+  const [balance, setBalance] = useState(() => Number(localStorage.getItem(`${userStorageKey}:balance`) ?? 0));
   const [unclaimedBalance, setUnclaimedBalance] = useState(0);
-  const [lastClaimTime, setLastClaimTime] = useState(() => Number(localStorage.getItem(`${STORAGE_KEY}:lastClaim`) ?? Date.now()));
-  const [level, setLevel] = useState(() => Number(localStorage.getItem(`${STORAGE_KEY}:level`) ?? 1));
+  const [lastClaimTime, setLastClaimTime] = useState(() => Number(localStorage.getItem(`${userStorageKey}:lastClaim`) ?? Date.now()));
+  const [level, setLevel] = useState(() => Number(localStorage.getItem(`${userStorageKey}:level`) ?? 1));
   const [completedTasks, setCompletedTasks] = useState<string[]>([]);
   const [soundOn, setSoundOn] = useState(true);
   const [referrals, setReferrals] = useState<Referral[]>([]);
@@ -50,9 +38,10 @@ function App() {
   const formattedBalance = totalBalance.toFixed(4);
 
   useEffect(() => { const timer = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(timer); }, []);
-  useEffect(() => { localStorage.setItem(`${STORAGE_KEY}:balance`, String(balance)); localStorage.setItem(`${STORAGE_KEY}:lastClaim`, String(lastClaimTime)); localStorage.setItem(`${STORAGE_KEY}:level`, String(level)); }, [balance, lastClaimTime, level]);
+  useEffect(() => { localStorage.setItem(`${userStorageKey}:balance`, String(balance)); localStorage.setItem(`${userStorageKey}:lastClaim`, String(lastClaimTime)); localStorage.setItem(`${userStorageKey}:level`, String(level)); }, [balance, lastClaimTime, level, userStorageKey]);
   useEffect(() => {
     const syncUser = async () => {
+      if (!userId) return;
       const response = await fetch('/api/user', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ telegram_id: userId, username: telegramUser?.username, start_param: startParam }) });
       if (!response.ok) return;
       const user = await response.json();
@@ -70,9 +59,10 @@ function App() {
       setReferralEarned(Number(data.referral_earned || 0));
     };
     syncUser().catch(() => undefined);
-  }, [userId, startParam]);
+  }, [telegramUser?.username, userId, startParam]);
 
   const claim = () => {
+    if (!userId) return;
     setBalance(totalBalance);
     setUnclaimedBalance(0);
     setLastClaimTime(Date.now());
@@ -82,6 +72,8 @@ function App() {
   const buyLevel = (nextLevel: number, price: number) => { if (nextLevel === level + 1 && totalBalance >= price) { setBalance(totalBalance - price); setUnclaimedBalance(0); setLastClaimTime(Date.now()); setLevel(nextLevel); } };
   const referralLink = `https://t.me/${BOT_NAME}?start=${userId}`;
   const pageTitle = useMemo(() => ({ mine: 'Mining', tasks: 'Earn more', miners: 'Miners', friends: 'Friends', profile: 'Profile' }[activeTab]), [activeTab]);
+
+  if (!userId) return <NotMobile />;
 
   const renderContent = () => {
     if (activeTab === 'tasks') return <section className={styles.page}><p className={styles.eyebrow}>REWARDS</p><h1>{pageTitle}</h1><p className={styles.muted}>Complete simple actions and grow your balance.</p><div className={styles.taskList}>{tasks.map((task) => { const done = completedTasks.includes(task.title); return <article className={styles.task} key={task.title}><span className={styles.taskIcon}>{task.icon}</span><div><strong>{task.title}</strong><small>+{task.reward} AGEN</small></div><button className={styles.smallButton} disabled={done} onClick={() => setCompletedTasks([...completedTasks, task.title])}>{done ? 'Done' : task.action}</button></article>; })}</div></section>;

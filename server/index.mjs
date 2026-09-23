@@ -9,6 +9,10 @@ function send(response, status, body) {
   response.end(JSON.stringify(body));
 }
 
+function isTelegramId(value) {
+  return /^\d+$/.test(String(value || ''));
+}
+
 async function readBody(request) {
   let body = '';
   for await (const chunk of request) body += chunk;
@@ -26,7 +30,9 @@ async function findOrCreateUser(client, telegramId, startParam, username) {
   const created = await client.query(`INSERT INTO users (telegram_id, username, balance, mining_level, last_claim_time, referral_code, referred_by)
     VALUES ($1, $2, 0.0, 1, CURRENT_TIMESTAMP, $3, $4) ON CONFLICT (telegram_id) DO NOTHING RETURNING *`, [telegramId, username || null, String(telegramId), inviter.rowCount ? inviterId : null]);
   if (!created.rowCount) return (await client.query('SELECT * FROM users WHERE telegram_id = $1 FOR UPDATE', [telegramId])).rows[0];
-  if (inviter.rowCount) await client.query('UPDATE users SET balance = balance + $1, referral_count = referral_count + 1, referral_earned = referral_earned + $1 WHERE telegram_id = $2', [REFERRAL_REWARD, inviterId]);
+  if (inviter.rowCount) {
+    await client.query('UPDATE users SET balance = balance + $1, referral_count = referral_count + 1, referral_earned = referral_earned + $1 WHERE telegram_id = $2', [REFERRAL_REWARD, inviterId]);
+  }
   return created.rows[0];
 }
 
@@ -48,13 +54,14 @@ const server = createServer(async (request, response) => {
       return send(response, 200, { referrals: result.rows.map((row) => ({ telegram_id: String(row.telegram_id), created_at: row.created_at })), referral_count: Number(owner.rows[0]?.referral_count || 0), referral_earned: Number(owner.rows[0]?.referral_earned || 0) });
     }
     if (url.pathname === '/api/user' && request.method === 'GET' && userId) {
+      if (!isTelegramId(userId)) return send(response, 400, { error: 'telegram_id must be numeric' });
       const result = await pool.query('SELECT * FROM users WHERE telegram_id = $1', [userId]);
       return send(response, 200, result.rowCount ? serialize(result.rows[0]) : { telegram_id: userId, balance: 0, unclaimed_balance: 0, mining_level: 1, last_claim_time: Date.now(), referral_count: 0, referral_earned: 0 });
     }
     if (url.pathname === '/api/user' && request.method === 'POST') {
       const body = await readBody(request);
       const telegramId = String(body.telegram_id || '');
-      if (!/^\d+$/.test(telegramId)) return send(response, 400, { error: 'telegram_id is required' });
+      if (!isTelegramId(telegramId)) return send(response, 400, { error: 'telegram_id is required and must be numeric' });
       const client = await pool.connect();
       try {
         await client.query('BEGIN');
